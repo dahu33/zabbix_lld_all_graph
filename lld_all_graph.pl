@@ -1,18 +1,9 @@
 #!/usr/bin/perl
 use JSON;
 
-#version 2012.06.26
-#added item prototype exclusion by item key
-#now 42 colors available
-
-#version 2012.06.14
-#added drawtype parameter
-#added calcfunction parameter
-#showtriggers now defaults to true
-
-#version 2012.06.13.1
-#added showtriggers parameter 
-
+#version 1 (fork of mmarkwitzz script version 2012.06.26)
+# now graphs are updated instead of being deleted when they already exist
+# added customizable parameters for width and height
 
 # load a json string from a file
 sub loadjson
@@ -161,7 +152,7 @@ sub getitems
 
 
 # get graphs from zabbix (auth, hostid, graphname)
-sub getgraphs
+sub getgraphid
 {
     #auth
     $auth_in = $_[0];
@@ -171,7 +162,7 @@ sub getgraphs
     $graph_in = $_[2];
     
     # load graphs json
-    $data = '{ "jsonrpc": "2.0", "method": "graph.get", "params": { "output": "extend", "sortfield": "name", "hostids": [ "" ], "filter": { "name": "" } }, "id": 3, "auth": "" }';
+    $data = '{ "jsonrpc": "2.0", "method": "graph.get", "params": { "output": "shorten", "sortfield": "name", "hostids": [ "" ], "filter": { "name": "" } }, "id": 3, "auth": "" }';
     # decode json
     $dec = decode_json($data);
     # set auth
@@ -189,11 +180,13 @@ sub getgraphs
     $res = sendjson($data);            
     # decode json
     $dec_out = decode_json($res);    
-    
-#    print $res."\n\n";
-    
-    #return
-    return $dec_out;
+
+	if (@{$dec_out->{result}}) {
+		print "    "."    "."    "."Graph found: ".$graph_in."\n";
+		return $dec_out->{"result"}[0]->{"graphid"};
+	} else {
+		return undef;
+	}
 }
 
 
@@ -234,38 +227,8 @@ sub deletegraph
 }
 
 
-# search and delete existing graphs from zabbix (auth, hostid, graphname)
-sub deletegraphs
-{
-    #auth
-    $auth_in = $_[0];
-    #hostid
-    $hostid_in = $_[1];
-    #graph
-    $graph_in = $_[2];
 
-
-    # get graph with name
-    $graphs = getgraphs($auth_in, $hostid_in, $graph_in);
-	
-    # each graph in list
-    # filter graphs that do not belong to our hostid
-    foreach $graphi(@{$graphs->{result}}) {
-	
-	# get graph id
-    	$graphid = $graphi->{graphid};
-    	# get graph name
-    	$graph_name = $graphi->{name};
-    	    
-    	print "    "."    "."    "."Graph found: ".$graph_name." (".$graphid.")"."\n";
-    	    
-    	# delete the graph
-    	deletegraph($auth_in, $graphid);
-    }
-}
-
-
-# create graph in zabbix (auth, graphname, graphtype, mintype, maxtype, minvalue, maxvalue, showtriggers, graphitems, hostid)
+# create graph in zabbix (auth, graphname, width, height, graphtype, mintype, maxtype, minvalue, maxvalue, showtriggers, graphitems, hostid)
 sub creategraph
 {
     #ymin_type = 0 -> calculated
@@ -277,17 +240,19 @@ sub creategraph
     $auth_in = $_[0];
     #graph name
     $graph_in = $_[1];
-    #graphtype, mintype, maxtype, minvalue, maxvalue
-    $graphtype_in = $_[2];
-    $mintype_in = $_[3];
-    $maxtype_in = $_[4];        
-    $minvalue_in = $_[5];
-    $maxvalue_in = $_[6];
-    $showtriggers_in = $_[7];
+    #width, height, graphtype, mintype, maxtype, minvalue, maxvalue
+	$width_in = $_[2];
+	$height_in = $_[3];
+    $graphtype_in = $_[4];
+    $mintype_in = $_[5];
+    $maxtype_in = $_[6];        
+    $minvalue_in = $_[7];
+    $maxvalue_in = $_[8];
+    $showtriggers_in = $_[9];
     #graphitems
-    $graphitems_in = $_[8];
+    $graphitems_in = $_[10];
     #hostid
-    $hostid_in = $_[9];
+    $hostid_in = $_[11];
     
     # load graphs json
     $data = '{ "jsonrpc": "2.0", "method": "graph.create", "params": { "gitems": [ "" ], "name": "", "width": "900", "height": "300", "yaxismin": "0", "yaxismax": "100", 
@@ -300,7 +265,9 @@ sub creategraph
     $dec->{"auth"} = $auth_in;
     # set graph name
     $dec->{"params"}->{"name"} = $graph_in;
-    # set graphtype, mintype, maxtype, minvalue, maxvalue
+    # set width, height, graphtype, mintype, maxtype, minvalue, maxvalue
+	$dec->{"params"}->{width} = $width_in;
+	$dec->{"params"}->{height} = $height_in;
     $dec->{"params"}->{graphtype} = $graphtype_in;
     $dec->{"params"}->{ymin_type} = $mintype_in;
     $dec->{"params"}->{ymax_type} = $maxtype_in;
@@ -328,6 +295,74 @@ sub creategraph
 }
 
 
+sub updategraph
+{
+    #ymin_type = 0 -> calculated
+    #ymin_type = 1 -> fixed
+    #graphtype = 0 -> normal
+    #graphtype = 1 -> stack
+
+    #auth
+    $auth_in = $_[0];
+    #graph name
+    $graph_in = $_[1];
+    #width, height, graphtype, mintype, maxtype, minvalue, maxvalue
+	$width_in = $_[2];
+	$height_in = $_[3];
+    $graphtype_in = $_[4];
+    $mintype_in = $_[5];
+    $maxtype_in = $_[6];        
+    $minvalue_in = $_[7];
+    $maxvalue_in = $_[8];
+    $showtriggers_in = $_[9];
+    #graphitems
+    $graphitems_in = $_[10];
+    #graphid
+    $graphid_in = $_[11];
+
+    # load graphs json
+    $data = '{ "jsonrpc": "2.0", "method": "graph.update", "params": { "graphid": "", "gitems": [ "" ], "name": "", "width": "900", "height": "300", "yaxismin": "0", "yaxismax": "100", 
+	       "show_work_period": "1", "show_triggers": "1", "graphtype": "0", "show_legend": "1", "show_3d": "0", "percent_left": "0", "percent_right": "0", "ymin_type": "0",
+	       "ymax_type": "0", "ymin_itemid": "0", "ymax_itemid": "0" }, "id": 4, "auth": "" }';
+
+    # decode json
+    $dec = decode_json($data);
+    # set auth
+    $dec->{"auth"} = $auth_in;
+    # set graph id
+    $dec->{"params"}->{"graphid"} = $graphid_in;
+    # set graph name
+    $dec->{"params"}->{"name"} = $graph_in;
+    # set width, height, graphtype, mintype, maxtype, minvalue, maxvalue
+	$dec->{"params"}->{width} = $width_in;
+	$dec->{"params"}->{height} = $height_in;
+    $dec->{"params"}->{graphtype} = $graphtype_in;
+    $dec->{"params"}->{ymin_type} = $mintype_in;
+    $dec->{"params"}->{ymax_type} = $maxtype_in;
+    $dec->{"params"}->{yaxismin} = $minvalue_in;
+    $dec->{"params"}->{yaxismax} = $maxvalue_in;
+    $dec->{"params"}->{show_triggers} = $showtriggers_in;
+    # set graph gitems
+    $dec->{"params"}->{gitems} = $graphitems_in;
+    # encode back to data
+    $data = encode_json($dec);
+    
+#    print $data."\n\n";
+
+    # send json
+    $res = sendjson($data);            
+    # decode json
+    $dec_out = decode_json($res);    
+    
+#    print $res."\n\n";
+
+    print "    "."    "."    "."Graph updated: ".$graph_in."\n";
+
+    #return
+    return $dec_out;
+}
+
+
 
 	#########
 	# modify these values accordingly
@@ -342,19 +377,23 @@ sub creategraph
 	$header = "Content-Type:application/json";
 	# intenal zabbix url
 	$url = "http://127.0.0.1/api_jsonrpc.php";
+	# by default existing graphs are updated. force_delete　will delete existing graphs and create it again
+	$force_delete = 0;
 	# create a graph with this name in each host
 	$graph = 'WIN Volume "ALL" bytes/sec stack';
+	$width = 900;
+	$height = 300;
 	$graphtype = 1; ### 0=normal, 1=stacked
 	$mintype = 1; ### 0=calculated, 1=fixed
-	$maxtype = 0; ### 0=calculated, 1=fixed
+	$maxtype = 1; ### 0=calculated, 1=fixed
 	$minvalue = 0;
 	$maxvalue = 100;
 	$showtriggers = 1;
 	$drawtype = 0; ### 0=line, 1=filled, 2=boldline, 3=dot, 4=dashed, 5=gradient
 	$calcfunction = 2; ### 1=min, 4=max, 2=avg, 7=all
 	# add graph items mathing these regexes, maximum 2
-	$regexes[0] = '^WIN\sVolume\s".*"\sbytes/sec\swrite';
-	$regexes[1] = '^WIN\sVolume\s".*"\sbytes/sec\sread';
+    $regexes[0] = '^WIN\sVolume\s".*"\sbytes/sec\swrite';
+    $regexes[1] = '^WIN\sVolume\s".*"\sbytes/sec\sread';
 
 
 
@@ -453,13 +492,8 @@ foreach $hostgroup(@{$hostgroups->{result}}) {
 		@graph_item = ();
 		
 		print "    "."HOST: ".$name." (".$hostid.")"."\n";
-		
-		#########
-		# search for existing graphs and delete if found
-		#########
-		deletegraphs($auth, $hostid, $graph);
 	
-    		# get item list
+    	# get item list
 		$items = getitems($auth, $hostid);
 		$count = 0;
 		# reset colorbase;
@@ -517,10 +551,26 @@ foreach $hostgroup(@{$hostgroups->{result}}) {
 		    }
 		}
 		
-		#########
-		# create a new graph
-		#########
-		creategraph($auth, $graph, $graphtype, $mintype, $maxtype, $minvalue, $maxvalue, $showtriggers, \@graph_item, $hostid);
+		# Check if the graph already exist
+		$graphid = getgraphid($auth, $hostid, $graph);
+		
+		# Create, delete, update graphs
+		if ( $graphid && $force_delete ) {
+	    	# delete the graph
+			deletegraph($auth, $graphid);
+			# create a new graph
+			creategraph($auth, $graph, $width, $height, $graphtype, $mintype, $maxtype, $minvalue, $maxvalue, $showtriggers, \@graph_item, $hostid);
+		} elsif ( $graphid ) {
+			# update an existing graph
+			updategraph($auth, $graph, $width, $height, $graphtype, $mintype, $maxtype, $minvalue, $maxvalue, $showtriggers, \@graph_item, $graphid);
+		} else {
+			# create a new graph
+			creategraph($auth, $graph, $width, $height, $graphtype, $mintype, $maxtype, $minvalue, $maxvalue, $showtriggers, \@graph_item, $hostid);
+		}
+		
+
+		
+		
 	    }
 	}
     }
